@@ -1,0 +1,209 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "ANFAccount": {
+            "defaultValue": "ANFAccount",
+            "type": "String"
+        },
+        "VirtualNetworkName": {
+            "defaultValue": "NetAppFilesVnet",
+            "type": "String"
+        },
+        "VirtualNetworkAdressSpace": {
+            "defaultValue": "10.249.64.0/18",
+            "type": "String"
+        },
+        "DelegatedSubnetName": {
+            "defaultValue": "ANFDelegatedSubnetName",
+            "type": "String"
+        },
+        "DelegatedSubnetAddressSpace": {
+            "defaultValue": "10.249.120.0/28",
+            "type": "String"
+        },
+        "VM_Subnet": {
+            "defaultValue": "VM-subnet",
+            "type": "String"
+        },
+        "VM_SubnetAddressSpace": {
+            "defaultValue": "10.249.121.0/24",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.NetApp/netAppAccounts",
+            "apiVersion": "2021-06-01",
+            "name": "[parameters('ANFAccount')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "encryption": {
+                    "keySource": "Microsoft.NetApp"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Network/virtualNetworks",
+            "apiVersion": "2020-11-01",
+            "name": "[parameters('VirtualNetworkName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "[parameters('VirtualNetworkAdressSpace')]"
+                    ]
+                },
+                "subnets": [
+                    {
+                        "name": "[parameters('DelegatedSubnetName')]",
+                        "properties": {
+                            "addressPrefix": "[parameters('DelegatedSubnetAddressSpace')]",
+                            "delegations": [
+                                {
+                                    "name": "Microsoft.NetApp",
+                                    "properties": {
+                                        "serviceName": "Microsoft.NetApp/volumes"
+                                    }
+                                }
+                            ],
+                            "privateEndpointNetworkPolicies": "Enabled",
+                            "privateLinkServiceNetworkPolicies": "Enabled"
+                        }
+                    },
+                    {
+                        "name": "VM-subnet",
+                        "properties": {
+                            "addressPrefix": "[parameters('VM_SubnetAddressSpace')]",
+                            "delegations": [],
+                            "privateEndpointNetworkPolicies": "Enabled",
+                            "privateLinkServiceNetworkPolicies": "Enabled"
+                        }
+                    }
+                ],
+                "virtualNetworkPeerings": [],
+                "enableDdosProtection": false
+            }
+        },
+        {
+            "type": "Microsoft.NetApp/netAppAccounts/capacityPools",
+            "apiVersion": "2021-06-01",
+            "name": "[concat(parameters('ANFAccount'), '/ANFCapacityPool')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.NetApp/netAppAccounts', parameters('ANFAccount'))]"
+            ],
+            "properties": {
+                "serviceLevel": "Standard",
+                "size": 4398046511104,
+                "qosType": "Auto",
+                "encryptionType": "Single",
+                "coolAccess": false
+            }
+        },
+        {
+            "type": "Microsoft.Network/virtualNetworks/subnets",
+            "apiVersion": "2020-11-01",
+            "name": "[concat(parameters('VirtualNetworkName'), '/', parameters('DelegatedSubnetName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', parameters('VirtualNetworkName'))]"
+            ],
+            "properties": {
+                "addressPrefix": "[parameters('DelegatedSubnetAddressSpace')]",
+                "delegations": [
+                    {
+                        "name": "Microsoft.NetApp",
+                        "properties": {
+                            "serviceName": "Microsoft.NetApp/volumes"
+                        }
+                    }
+                ],
+                "privateEndpointNetworkPolicies": "Enabled",
+                "privateLinkServiceNetworkPolicies": "Enabled"
+            }
+        },
+        {
+            "type": "Microsoft.Network/virtualNetworks/subnets",
+            "apiVersion": "2020-11-01",
+            "name": "[concat(parameters('VirtualNetworkName'), '/', parameters('VM_Subnet'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', parameters('VirtualNetworkName'))]"
+            ],
+            "properties": {
+                "addressPrefix": "[parameters('VM_SubnetAddressSpace')]",
+                "delegations": [],
+                "privateEndpointNetworkPolicies": "Enabled",
+                "privateLinkServiceNetworkPolicies": "Enabled"
+            }
+        },
+        {
+            "type": "Microsoft.NetApp/netAppAccounts/capacityPools/volumes",
+            "apiVersion": "2021-06-01",
+            "name": "[concat(parameters('ANFAccount'), '/ANFCapacityPool/ANFVolume')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.NetApp/netAppAccounts/capacityPools', parameters('ANFAccount'), 'ANFCapacityPool')]",
+                "[resourceId('Microsoft.NetApp/netAppAccounts', parameters('ANFAccount'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('VirtualNetworkName'), parameters('DelegatedSubnetName'))]"
+            ],
+            "properties": {
+                "serviceLevel": "Standard",
+                "creationToken": "Share-324",
+                "usageThreshold": 4398046511104,
+                "exportPolicy": {
+                    "rules": [
+                        {
+                            "ruleIndex": 1,
+                            "unixReadOnly": false,
+                            "unixReadWrite": true,
+                            "cifs": false,
+                            "nfsv3": true,
+                            "nfsv41": false,
+                            "allowedClients": "0.0.0.0/0",
+                            "kerberos5ReadOnly": false,
+                            "kerberos5ReadWrite": false,
+                            "kerberos5iReadOnly": false,
+                            "kerberos5iReadWrite": false,
+                            "kerberos5pReadOnly": false,
+                            "kerberos5pReadWrite": false,
+                            "hasRootAccess": true,
+                            "chownMode": "Restricted"
+                        }
+                    ]
+                },
+                "protocolTypes": [
+                    "NFSv3"
+                ],
+                "subnetId": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('VirtualNetworkName'), parameters('DelegatedSubnetName'))]",
+                "networkFeatures": "Basic",
+                "snapshotDirectoryVisible": true,
+                "kerberosEnabled": false,
+                "securityStyle": "Unix",
+                "smbEncryption": false,
+                "smbContinuouslyAvailable": false,
+                "encryptionKeySource": "Microsoft.NetApp",
+                "ldapEnabled": false,
+                "unixPermissions": "0770",
+                "throughputMibps": 65.536,
+                "coolAccess": false,
+                "avsDataStore": "Disabled",
+                "isDefaultQuotaEnabled": false,
+                "defaultUserQuotaInKiBs": 0,
+                "defaultGroupQuotaInKiBs": 0
+            }
+        },
+        {
+            "type": "Microsoft.NetApp/netAppAccounts/capacityPools/volumes/snapshots",
+            "apiVersion": "2021-06-01",
+            "name": "[concat(parameters('ANFAccount'), '/ANFCapacityPool/ANFVolume/ANFSnapshot')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.NetApp/netAppAccounts/capacityPools/volumes', parameters('ANFAccount'), 'ANFCapacityPool', 'ANFVolume')]",
+                "[resourceId('Microsoft.NetApp/netAppAccounts/capacityPools', parameters('ANFAccount'), 'ANFCapacityPool')]",
+                "[resourceId('Microsoft.NetApp/netAppAccounts', parameters('ANFAccount'))]"
+            ],
+            "properties": {}
+        }
+    ]
+}
